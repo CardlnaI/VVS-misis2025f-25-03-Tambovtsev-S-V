@@ -50,7 +50,6 @@ class Armor(Item):
 @dataclass
 class Consumable(Item):
     heal: int = 0
-    # можно расширить (бонусы и т.д.)
 
 # -----------------------------
 # Enemy
@@ -78,7 +77,7 @@ class Enemy:
 class Room:
     kind: str  # 'empty', 'chest', 'monster', 'trap', 'portal', 'key'
     seen: bool = False
-    explored: bool = False  # если игрок когда-либо заходил
+    explored: bool = False
     chest_locked: bool = False
     chest_contents: List[Item] = field(default_factory=list)
     enemy: Optional[Enemy] = None
@@ -119,23 +118,19 @@ class Dungeon:
         self.generate_contents()
 
     def generate_contents(self):
-        # probabilities варьируются с уровнем difficulty
         for i in range(self.n):
             for j in range(self.m):
                 self.grid[i][j] = Room(kind='empty')
 
-        # Place portal (disabled until key found)
         px, py = self.random_cell(exclude_center=True)
         self.portal_pos = (px, py)
         self.grid[px][py].kind = 'portal'
         self.grid[px][py].portal_enabled = False
 
-        # Place key somewhere else (maybe chest or key-room)
         kx, ky = self.random_cell(exclude={(px,py)}, exclude_center=True)
         self.key_pos = (kx, ky)
         self.grid[kx][ky].kind = 'key'
 
-        # Place some chests, enemies, traps
         count = max( (self.n*self.m)//6, 4 )
         for _ in range(count):
             x,y = self.random_cell(exclude={(px,py),(kx,ky)})
@@ -152,7 +147,6 @@ class Dungeon:
                 dmg = roll(2 + self.difficulty, 5 + self.difficulty*3)
                 room = Room(kind='trap', trap_damage=dmg)
                 self.grid[x][y] = room
-            # empty ignored
 
     def random_cell(self, exclude: set = None, exclude_center=False):
         if exclude is None:
@@ -174,7 +168,6 @@ class Dungeon:
                     break
                 continue
             return (x,y)
-        # fallback
         for i in range(self.n):
             for j in range(self.m):
                 if (i,j) not in exclude:
@@ -183,27 +176,21 @@ class Dungeon:
 
     def generate_loot(self) -> List[Item]:
         loot = []
-        # higher difficulty → better loot chances
         r = random.randint(0, 100)
         if r < 40:
-            # consumable
             heal = roll(5 + self.difficulty*2, 20 + self.difficulty*3)
             loot.append(Consumable(name='Зелье', desc=f'Восстанавливает {heal} HP', heal=heal))
         elif r < 70:
-            # weapon
             atk = roll(1 + self.difficulty, 3 + self.difficulty*2)
             loot.append(Weapon(name=f'Оружие +{atk}', desc=f'+{atk} к атаке', atk=atk))
         else:
-            # armor
             df = roll(1 + self.difficulty, 3 + self.difficulty*2)
             loot.append(Armor(name=f'Доспех +{df}', desc=f'+{df} к броне', defense=df))
-        # sometimes add coins or another item
         if random.random() < 0.2:
             loot.append(Consumable(name='Малое зелье', desc='Малое восстановление', heal=roll(3,8)))
         return loot
 
     def generate_enemy(self) -> Enemy:
-        # enemy scales with difficulty
         base_hp = roll(5 + self.difficulty*2, 8 + self.difficulty*4)
         atk = roll(1 + self.difficulty, 2 + self.difficulty*2)
         df = roll(0, self.difficulty)
@@ -212,7 +199,6 @@ class Dungeon:
     def reveal_portal_if_key(self):
         px, py = self.portal_pos
         self.grid[px][py].portal_enabled = True
-        # change description (visual handled in map)
 
 # -----------------------------
 # Player
@@ -279,8 +265,8 @@ class Player:
 class Game:
     def __init__(self):
         self.level = 1
-        self.dungeon = None  # type: Dungeon
-        self.player = None   # type: Player
+        self.dungeon = None
+        self.player = None
         self.init_new_level(self.level)
 
     def init_new_level(self, level:int):
@@ -288,19 +274,14 @@ class Game:
         n = random.randint(5, 8)
         m = random.randint(5, 8)
         self.dungeon = Dungeon(n=n, m=m, difficulty=level)
-        # player starts in center
         sx, sy = n//2, m//2
         if self.player is None:
-            # new player
             self.player = Player(x=sx, y=sy, hp_max=100, hp=100, atk_base=2, def_base=0)
         else:
-            # keep stats; reposition to center and heal a bit
             self.player.x, self.player.y = sx, sy
             self.player.hp = clamp(self.player.hp + max(5, 10 - level), 0, self.player.hp_max)
-        # ensure center is empty
         self.dungeon.grid[sx][sy] = Room(kind='empty')
         print(f"Размер уровня: {n}x{m}. Вы стартуете в ({sx},{sy}).")
-        # chance to give a starter consumable each level
         if random.random() < 0.7:
             heal = roll(6, 18)
             potion = Consumable(name='Зелье', desc=f'Восстанавливает {heal} HP', heal=heal)
@@ -317,7 +298,6 @@ class Game:
                     line.append(SYMBOLS['player'])
                 else:
                     r = self.dungeon.grid[i][j]
-                    # don't reveal monsters/traps unless explored (or reveal_traps True)
                     if r.kind == 'monster' and not r.explored:
                         line.append(SYMBOLS['empty'])
                     else:
@@ -394,23 +374,19 @@ class Game:
             if not (0 <= nx < self.dungeon.n and 0 <= ny < self.dungeon.m):
                 print("Нельзя идти в эту сторону — граница уровня.")
                 return True
-            # move
             self.player.x, self.player.y = nx, ny
             room = self.dungeon.grid[nx][ny]
             room.explored = True
-            # handle room
             return self.handle_room(room)
         print("Команда не распознана. w/a/s/d - ход, map - карта, inv - инвентарь, use N, equip N, q - выход")
         return True
 
     def handle_room(self, room: Room) -> bool:
-        # if portal
         if room.kind == 'portal':
             if room.portal_enabled:
                 print("Вы вошли в портал! Переход на следующий уровень...")
                 self.level += 1
                 self.init_new_level(self.level)
-                # regenerate dungeon and continue
                 return True
             else:
                 print("Вы видите портал, но он неактивен — нужен ключ.")
@@ -419,14 +395,12 @@ class Game:
             print("Вы нашли ключ! Добавлен в инвентарь.")
             self.player.keys += 1
             room.kind = 'empty'
-            # Reveal portal
             self.dungeon.reveal_portal_if_key()
             return True
         if room.kind == 'empty':
             print("Пустая комната.")
             return True
         if room.kind == 'chest':
-            # open chest
             if room.chest_locked:
                 if self.player.keys > 0:
                     print("Сундук заперт. У вас есть ключ. Использовать ключ? (y/n)")
@@ -460,12 +434,11 @@ class Game:
                 room.chest_contents = []
                 return True
         if room.kind == 'trap':
-            # hidden traps might be unseen until explored; damage when stepped
             dmg = room.trap_damage
             print(f"Ловушка! Вы получили {dmg} единиц урона.")
             real_dmg = self.player.take_damage(dmg)
             print(f"Фактический урон с учётом брони: {real_dmg}. Текущее HP: {self.player.hp}/{self.player.hp_max}")
-            room.kind = 'empty'  # одноразовая
+            room.kind = 'empty'
             if not self.player.is_alive():
                 print("Вы погибли в ловушке.")
                 return self.game_over()
@@ -477,19 +450,16 @@ class Game:
                 room.kind = 'empty'
                 return True
             print(f"В комнате — {e.name}! (HP {e.hp}, ATK {e.atk}, DEF {e.defense})")
-            # combat loop
             while e.is_alive() and self.player.is_alive():
                 print("\nВыберите действие: hit (атака), flee (убежать), stats (статусы), inv, equip, use N")
                 action = input("> ").strip().lower()
                 if action in ('hit', 'h', ''):
-                    # player attack
                     atk = self.player.attack_value()
                     dmg_dealt = e.take_damage(atk)
                     print(f"Вы атакуете (`{atk}`) и наносите {dmg_dealt} урона. Монстр HP: {max(0,e.hp)}")
                     if not e.is_alive():
                         print(f"Вы победили {e.name}! Получено {e.exp} опыта.")
                         self.player.exp += e.exp
-                        # maybe drop loot
                         if random.random() < 0.5:
                             loot = self.dungeon.generate_loot()
                             for it in loot:
@@ -525,11 +495,9 @@ class Game:
                         print("equip <индекс>")
                     continue
                 elif action in ('flee','run'):
-                    # attempt to flee: chance depends on enemy and player
                     chance = 50 + (self.player.attack_value() - e.atk)*5
                     if random.randint(1,100) <= clamp(chance, 10, 90):
                         print("Вам удалось убежать!")
-                        # move player back to previous position if possible — we don't track previous easily; instead randomly step to adjacent safe cell
                         moved = self.safe_step_out()
                         return True
                     else:
@@ -544,7 +512,6 @@ class Game:
                 else:
                     print("Неизвестное действие.")
                     continue
-                # if monster still alive, it attacks
                 if e.is_alive():
                     dmg = e.atk
                     taken = self.player.take_damage(dmg)
@@ -557,7 +524,6 @@ class Game:
         return True
 
     def safe_step_out(self) -> bool:
-        # try to step to any adjacent cell that is inside bounds
         for dx,dy in DIRS.values():
             nx = self.player.x + dx
             ny = self.player.y + dy
@@ -572,7 +538,6 @@ class Game:
         print("2) Выйти")
         ans = input("> ").strip()
         if ans == '1':
-            # reset everything
             self.__init__()
             return True
         else:
@@ -594,7 +559,6 @@ class Game:
 # Запуск
 # -----------------------------
 if __name__ == "__main__":
-    # Чтобы игра была чуть более предсказуемой при отладке, можно передать семя через аргументы
     seed = None
     if len(sys.argv) >= 2:
         try:
